@@ -2,6 +2,7 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using SereniaBLPLib;
 
 namespace WoWHeightGen // Note: actual namespace depends on the project name.
 {
@@ -12,11 +13,16 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
         static CASCConfig? cascConfig;
         static CASCHandler? cascHandler;
         static WowRootHandler? wowRootHandler;
+        static List<int> wdtFileIDs;
 
         static void Main(string[] args)
         {
             GetWowInstallInfo();
-            GetWDTInfo();
+            while (true)
+            {
+                if (!GetWDTInfo()) return;
+                if (!GetTaskInfo()) return;
+            }
         }
 
         static void GetWowInstallInfo()
@@ -66,7 +72,7 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
             }
         }
 
-        static void GetWDTInfo()
+        static bool GetWDTInfo()
         {
             while (true)
             {
@@ -76,7 +82,7 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
                 string? inputString = Console.ReadLine();
                 if (inputString != null)
                 {
-                    if (inputString.Equals("exit")) return;
+                    if (inputString.ToLower().Equals("exit")) return false;
                 }
                 else continue;
 
@@ -85,12 +91,64 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
                     inputString = inputString.Replace(" ", "");
                     string[] split = inputString.Split(',');
 
+                    wdtFileIDs = new List<int>();
+
                     for (int i = 0; i < split.Length; i++)
                     {
                         if (int.TryParse(split[i], out int fileID))
                         {
-                            Console.WriteLine("Processing : " + fileID);
-                            Build(fileID, false, false);
+                            wdtFileIDs.Add(fileID);
+                        }
+                    }
+
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine(ex.Message.ToString());
+                    Console.ResetColor();
+                    continue;
+                }
+            }
+        }
+
+        static bool GetTaskInfo()
+        {
+            if (wdtFileIDs == null) return true;
+
+            while (true)
+            {
+                PrintInfo("Pick a task: 1 - Export Height Map, 2 - Export Minimaps. Eg: ", "1");
+                Console.WriteLine("");
+                string? inputString = Console.ReadLine();
+                if (inputString != null)
+                {
+                    if (inputString.ToLower().Equals("exit")) return false;
+                }
+                else continue;
+
+                try
+                {
+                    if (int.TryParse(inputString, out int taskType))
+                    {
+                        if (taskType == 1)
+                        {
+                            foreach (var fileID in wdtFileIDs)
+                            {
+                                Console.WriteLine("Processing : " + fileID);
+                                BuildHeight(fileID, false, false);
+                                return true;
+                            }
+                        }
+                        else if (taskType == 2)
+                        {
+                            foreach (var fileID in wdtFileIDs)
+                            {
+                                Console.WriteLine("Processing : " + fileID);
+                                BuildMinimap(fileID);
+                                return true;
+                            }
                         }
                     }
                 }
@@ -114,7 +172,7 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
             Console.WriteLine();
         }
 
-        static void Build(int wdtFileID, bool clampToAboveSea, bool clampToBelowSea)
+        static void BuildHeight(int wdtFileID, bool clampToAboveSea, bool clampToBelowSea)
         {
             if (!Directory.Exists(OUTPUTPATH))
                 Directory.CreateDirectory(OUTPUTPATH);
@@ -200,7 +258,52 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
                                 }
                             }
                         }
-                        outputImage.SaveAsPng($"{OUTPUTPATH}/{wdtFileID}.png");
+                        outputImage.SaveAsPng($"{OUTPUTPATH}/{wdtFileID}_height.png");
+                    }
+                }
+            }
+        }
+
+        static void BuildMinimap(int wdtFileID)
+        {
+            if (!Directory.Exists(OUTPUTPATH))
+                Directory.CreateDirectory(OUTPUTPATH);
+
+            if (cascHandler == null) return;
+            if (cascHandler.FileExists(wdtFileID))
+            {
+                using (Image<Rgba32> outputImage = new Image<Rgba32>(32768, 32768))
+                {
+                    using (var wdtstr = cascHandler.OpenFile(wdtFileID))
+                    {
+                        Wdt wdt = new Wdt(wdtstr);
+
+                        if (wdt.fileInfo != null)
+                        {
+                            for (var y = 0; y < 64; y++)
+                            {
+                                for (var x = 0; x < 64; x++)
+                                {
+                                    var info = wdt.fileInfo[x, y];
+                                    int minimapFileID = (int)info.minimapTexture;
+
+                                    if (cascHandler.FileExists(minimapFileID))
+                                    {
+                                        using (var adtstr = cascHandler.OpenFile(minimapFileID))
+                                        {
+                                            BlpFile blp = new BlpFile(adtstr);
+                                            var img = blp.GetImage(0);
+
+                                            if (img != null)
+                                            {
+                                                outputImage.Mutate(o => o.DrawImage(img, new Point(512 * x, 512 * y), 1f));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        outputImage.SaveAsPng($"{OUTPUTPATH}/{wdtFileID}_minimap.png");
                     }
                 }
             }
