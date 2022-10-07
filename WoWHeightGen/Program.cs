@@ -1,19 +1,27 @@
 ﻿using CASCLib;
+using SereniaBLPLib;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
-using SereniaBLPLib;
+using System.Text;
 
 namespace WoWHeightGen // Note: actual namespace depends on the project name.
 {
     internal class Program
     {
-        public static LocaleFlags firstInstalledLocale = LocaleFlags.enUS;
+        const LocaleFlags firstInstalledLocale = LocaleFlags.enUS;
         const string OUTPUTPATH = "Output";
+        const int MAP_SIZE = 64;
+        const int HEIGHT_CHUNK_RES = 128;
+        const int HEIGHT_MAP_RES = 8192;
+
+        static string? installPath;
+        static string? product;
+        static string? versionName;
         static CASCConfig? cascConfig;
         static CASCHandler? cascHandler;
         static WowRootHandler? wowRootHandler;
-        static List<int> wdtFileIDs;
+        static List<int>? wdtFileIDs;
 
         static void Main(string[] args)
         {
@@ -32,20 +40,10 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
                 Console.WriteLine("Type \"exit\" to quit.");
                 PrintInfo("Enter WoW install path. Eg: ", "D:/Games/World of Warcraft");
                 Console.WriteLine("");
-                string? installPath = Console.ReadLine();
-                if (installPath != null)
-                {
-                    if (installPath.Equals("exit")) return;
-                }
-                else continue;
+                if (GetConsoleString(out installPath)) continue;
 
-                PrintInfo("Enter product. Eg: ", "wow, wowt, wowb");
-                string? product = Console.ReadLine();
-                if (product != null)
-                {
-                    if (product.Equals("exit")) return;
-                }
-                else continue;
+                PrintInfo("Enter product. Eg: ", "wow, wowt, wow_beta");
+                if (GetConsoleString(out product)) continue;
 
                 try
                 {
@@ -55,6 +53,8 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
 
                     cascConfig = CASCConfig.LoadLocalStorageConfig(installPath, product);
                     cascHandler = CASCHandler.OpenStorage(cascConfig);
+                    versionName = cascConfig.VersionName;
+
                     wowRootHandler = cascHandler.Root as WowRootHandler;
                     if (wowRootHandler != null)
                     {
@@ -79,12 +79,8 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
                 PrintInfo("Enter WDT fileID. Eg: ", "782779");
                 PrintInfo("Or enter WDT fileIDs separated by comma. Eg: ", "782779,790112,790796");
                 Console.WriteLine("");
-                string? inputString = Console.ReadLine();
-                if (inputString != null)
-                {
-                    if (inputString.ToLower().Equals("exit")) return false;
-                }
-                else continue;
+                if (GetConsoleString(out string? inputString)) continue;
+                if (inputString == null) continue;
 
                 try
                 {
@@ -121,12 +117,7 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
             {
                 PrintInfo("Pick a task: 1 - Export Height Map, 2 - Export Minimaps. Eg: ", "1");
                 Console.WriteLine("");
-                string? inputString = Console.ReadLine();
-                if (inputString != null)
-                {
-                    if (inputString.ToLower().Equals("exit")) return false;
-                }
-                else continue;
+                if (GetConsoleString(out string? inputString)) continue;
 
                 try
                 {
@@ -162,6 +153,16 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
             }
         }
 
+        static bool GetConsoleString(out string? value)
+        {
+            value = Console.ReadLine();
+
+            if (value != null)
+                if (value.Equals("exit")) return true;
+
+            return false;
+        }
+
         static void PrintInfo(string a, string b)
         {
             Console.ForegroundColor = ConsoleColor.Gray;
@@ -180,20 +181,20 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
             if (cascHandler == null) return;
             if (cascHandler.FileExists(wdtFileID))
             {
-                using (Image<Rgba32> outputImage = new Image<Rgba32>(8192, 8192))
+                using (Image<Rgba32> outputImage = new Image<Rgba32>(HEIGHT_MAP_RES, HEIGHT_MAP_RES))
                 {
                     using (var wdtstr = cascHandler.OpenFile(wdtFileID))
                     {
                         Wdt wdt = new Wdt(wdtstr);
-                        Adt[,] adts = new Adt[64, 64];
+                        Adt[,] adts = new Adt[MAP_SIZE, MAP_SIZE];
                         float minAdt = float.MaxValue;
                         float maxAdt = float.MinValue;
 
                         if (wdt.fileInfo != null)
                         {
-                            for (var y = 0; y < 64; y++)
+                            for (var y = 0; y < MAP_SIZE; y++)
                             {
-                                for (var x = 0; x < 64; x++)
+                                for (var x = 0; x < MAP_SIZE; x++)
                                 {
                                     var info = wdt.fileInfo[x, y];
                                     int adtFileID = (int)info.rootADT;
@@ -222,18 +223,18 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
 
                             Console.WriteLine($"{wdtFileID} : Min Height {minAdt} Max Height {maxAdt}");
 
-                            for (int y = 0; y < 64; y++)
+                            for (int y = 0; y < MAP_SIZE; y++)
                             {
-                                for (var x = 0; x < 64; x++)
+                                for (var x = 0; x < MAP_SIZE; x++)
                                 {
                                     if (adts[x, y] == null)
                                         continue;
 
-                                    byte[] castData = new byte[128 * 128 * 3];
+                                    byte[] castData = new byte[HEIGHT_CHUNK_RES * HEIGHT_CHUNK_RES * 3];
                                     int idx = 0;
-                                    for (int x1 = 0; x1 < 128; x1++)
+                                    for (int x1 = 0; x1 < HEIGHT_CHUNK_RES; x1++)
                                     {
-                                        for (int y1 = 0; y1 < 128; y1++)
+                                        for (int y1 = 0; y1 < HEIGHT_CHUNK_RES; y1++)
                                         {
                                             float value = adts[x, y].heightmap[x1, y1];
                                             if (clampToAboveSea)
@@ -249,11 +250,11 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
                                             idx += 3;
                                         }
                                     }
-                                    var img = Image.LoadPixelData<Rgb24>(castData, 128, 128);
+                                    var img = Image.LoadPixelData<Rgb24>(castData, HEIGHT_CHUNK_RES, HEIGHT_CHUNK_RES);
 
                                     if (img != null)
                                     {
-                                        outputImage.Mutate(o => o.DrawImage(img, new Point(128 * x, 128 * y), 1f));
+                                        outputImage.Mutate(o => o.DrawImage(img, new Point(HEIGHT_CHUNK_RES * x, HEIGHT_CHUNK_RES * y), 1f));
                                     }
                                 }
                             }
@@ -272,41 +273,77 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
             if (cascHandler == null) return;
             if (cascHandler.FileExists(wdtFileID))
             {
-                using (Image<Rgba32> outputImage = new Image<Rgba32>(32768, 32768))
+                using (var wdtstr = cascHandler.OpenFile(wdtFileID))
                 {
-                    using (var wdtstr = cascHandler.OpenFile(wdtFileID))
-                    {
-                        Wdt wdt = new Wdt(wdtstr);
+                    Wdt wdt = new Wdt(wdtstr);
 
-                        if (wdt.fileInfo != null)
+                    if (wdt.fileInfo != null)
+                    {
+                        var resolution = GetMinimapResolution(wdt);
+
+                        using (Image<Rgba32> outputImage = new Image<Rgba32>(resolution * 64, resolution * 64))
                         {
-                            for (var y = 0; y < 64; y++)
+                            for (var y = 0; y < MAP_SIZE; y++)
                             {
-                                for (var x = 0; x < 64; x++)
+                                for (var x = 0; x < MAP_SIZE; x++)
                                 {
                                     var info = wdt.fileInfo[x, y];
                                     int minimapFileID = (int)info.minimapTexture;
 
                                     if (cascHandler.FileExists(minimapFileID))
                                     {
-                                        using (var adtstr = cascHandler.OpenFile(minimapFileID))
+                                        using (var blpStr = cascHandler.OpenFile(minimapFileID))
                                         {
-                                            BlpFile blp = new BlpFile(adtstr);
+                                            BlpFile blp = new BlpFile(blpStr);
                                             var img = blp.GetImage(0);
 
                                             if (img != null)
                                             {
-                                                outputImage.Mutate(o => o.DrawImage(img, new Point(512 * x, 512 * y), 1f));
+                                                outputImage.Mutate(o => o.DrawImage(img, new Point(resolution * x, resolution * y), 1f));
                                             }
                                         }
                                     }
                                 }
                             }
+
+                            outputImage.SaveAsPng($"{OUTPUTPATH}/{wdtFileID}_minimap_{product}_{versionName}.png");
                         }
-                        outputImage.SaveAsPng($"{OUTPUTPATH}/{wdtFileID}_minimap.png");
                     }
                 }
             }
+        }
+
+        static int GetMinimapResolution(Wdt wdt)
+        {
+            if (cascHandler == null) return 0;
+            if (wdt == null) return 0;
+            if (wdt.fileInfo == null) return 0;
+
+            for (var y = 0; y < MAP_SIZE; y++)
+            {
+                for (var x = 0; x < MAP_SIZE; x++)
+                {
+                    var info = wdt.fileInfo[x, y];
+                    int minimapFileID = (int)info.minimapTexture;
+
+                    if (cascHandler.FileExists(minimapFileID))
+                    {
+                        using (var blpstr = cascHandler.OpenFile(minimapFileID))
+                        {
+                            using (BinaryReader br = new BinaryReader(blpstr, Encoding.ASCII, true))
+                            {
+                                br.BaseStream.Position += 12;
+                                var width = br.ReadInt32();
+                                var height = br.ReadInt32();
+
+                                return width;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return 0;
         }
     }
 }
