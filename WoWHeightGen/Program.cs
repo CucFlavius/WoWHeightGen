@@ -259,7 +259,7 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
                                 }
                             }
                         }
-                        outputImage.SaveAsPng($"{OUTPUTPATH}/{wdtFileID}_height.png");
+                        outputImage.SaveAsPng($"{OUTPUTPATH}/{wdtFileID}_height_{product}_{versionName}.png");
                     }
                 }
             }
@@ -281,7 +281,7 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
                     {
                         var resolution = GetMinimapResolution(wdt);
 
-                        using (Image<Rgba32> outputImage = new Image<Rgba32>(resolution * 64, resolution * 64))
+                        using (Image<Rgba32> outputImage = new Image<Rgba32>(resolution * MAP_SIZE, resolution * MAP_SIZE))
                         {
                             for (var y = 0; y < MAP_SIZE; y++)
                             {
