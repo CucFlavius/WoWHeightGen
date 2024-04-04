@@ -10,6 +10,7 @@ namespace WoWHeightGen
         public float minHeight;
         public float maxHeight;
         public float[,] heightmap;
+        public uint[,] areaIDmap;
 
         public Adt(byte[] data)
         {
@@ -35,6 +36,7 @@ namespace WoWHeightGen
             {
                 Read(br);
                 CalcHeightMap();
+                CalcAreaIDMap();
             }
         }
 
@@ -109,6 +111,48 @@ namespace WoWHeightGen
             }
         }
 
+        void CalcAreaIDMap()
+        {
+            if (this.chunks != null)
+            {
+                this.areaIDmap = new uint[128, 128];
+                int cIndex = 0;
+                for (int cx = 0; cx < 16; cx++)
+                {
+                    for (int cy = 0; cy < 16; cy++)
+                    {
+                        var chunk = this.chunks[cIndex];
+
+                        int currentVertex = 0;
+
+                        for (int i = 0; i < 17; i++)
+                        {
+                            // Selecting squares only
+                            if (i % 2 == 0)
+                            {
+                                var vx = i / 2;
+                                for (int vy = 0; vy < 9; vy++)
+                                {
+                                    if (vx < 8 && vy < 8)
+                                        this.areaIDmap[cx * 8 + vx, cy * 8 + vy] = chunk.areaID;
+                                    currentVertex++;
+                                }
+                            }
+                            if (i % 2 == 1)
+                            {
+                                for (int j1 = 0; j1 < 8; j1++)
+                                {
+                                    currentVertex++;
+                                }
+                            }
+                        }
+
+                        cIndex++;
+                    }
+                }
+            }
+        }
+
         public struct Chunk
         {
             public float minHeight;
@@ -117,12 +161,35 @@ namespace WoWHeightGen
             public float positionX;
             public float positionY;
             public float positionZ;
+            public uint areaID;
 
             public Chunk(BinaryReader br, int mcnkSize)
             {
                 long save = br.BaseStream.Position;
 
-                br.BaseStream.Position += 104;
+                var flags = br.ReadUInt32();
+                var indexX = br.ReadUInt32();
+                var indexY = br.ReadUInt32();
+                var nlayers = br.ReadUInt32();
+                var nDoodadRefs = br.ReadUInt32();
+                var holesHigh = br.ReadUInt64();
+                var ofslayers = br.ReadUInt32();
+                var ofsRefs = br.ReadUInt32();
+                var ofsAlpha = br.ReadUInt32();
+                var sizeAlpha = br.ReadUInt32();
+                var ofsShadow = br.ReadUInt32();
+                var sizeShadow = br.ReadUInt32();
+                this.areaID = br.ReadUInt32();
+                var nMapObjRefs = br.ReadUInt32();
+                var holesLow = br.ReadUInt16();
+                var unk = br.ReadUInt16();
+                var lowQualityTextureMap = br.ReadUInt16();
+                var noEffectDoodad = br.ReadUInt64();
+                var ofsSndEmitters = br.ReadUInt32();
+                var nSndEmitters = br.ReadUInt32();
+                var ofsLiquid = br.ReadUInt32();
+                var sizeLiquid = br.ReadUInt32();
+
                 this.positionX = br.ReadSingle();
                 this.positionY = br.ReadSingle();
                 this.positionZ = br.ReadSingle();
@@ -141,7 +208,7 @@ namespace WoWHeightGen
 
                     streamPos = br.BaseStream.Position + chunkSize;
 
-                    if (chunkID == 0x4d435654)
+                    if (chunkID == 0x4d435654)  // MCVT
                     {
                         for (int i = 0; i < 145; i++)
                         {

@@ -23,6 +23,8 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
         static WowRootHandler? wowRootHandler;
         static List<int>? wdtFileIDs;
 
+        static Dictionary<uint, (byte, byte, byte)> areaColorTable;
+
         static void Main(string[] args)
         {
             GetWowInstallInfo();
@@ -115,7 +117,7 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
 
             while (true)
             {
-                PrintInfo("Pick a task: 1 - Export Height Map, 2 - Export Minimaps. Eg: ", "1");
+                PrintInfo("Pick a task: 1 - Export Height Map, 2 - Export Minimaps, 3 - Export Area Maps Eg: ", "1");
                 Console.WriteLine("");
                 if (GetConsoleString(out string? inputString)) continue;
 
@@ -140,6 +142,22 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
                                 BuildMinimap(fileID);
                                 return true;
                             }
+                        }
+                        else if (taskType == 3)
+                        {
+                            foreach (var fileID in wdtFileIDs)
+                            {
+                                Console.WriteLine("Processing : " + fileID);
+                                BuildAreaIDMap(fileID);
+                                return true;
+                            }
+                        }
+                        else
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("Invalid task type.");
+                            Console.ResetColor();
+                            continue;
                         }
                     }
                 }
@@ -313,6 +331,92 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
             }
         }
 
+        static void BuildAreaIDMap(int wdtFileID)
+        {
+            if (!Directory.Exists(OUTPUTPATH))
+                Directory.CreateDirectory(OUTPUTPATH);
+
+            areaColorTable = new Dictionary<uint, (byte, byte, byte)>();
+
+            if (cascHandler == null) return;
+            if (cascHandler.FileExists(wdtFileID))
+            {
+                using (Image<Rgba32> outputImage = new Image<Rgba32>(HEIGHT_MAP_RES, HEIGHT_MAP_RES))
+                {
+                    using (var wdtstr = cascHandler.OpenFile(wdtFileID))
+                    {
+                        Wdt wdt = new Wdt(wdtstr);
+                        Adt[,] adts = new Adt[MAP_SIZE, MAP_SIZE];
+                        float minAdt = float.MaxValue;
+                        float maxAdt = float.MinValue;
+
+                        if (wdt.fileInfo != null)
+                        {
+                            for (var y = 0; y < MAP_SIZE; y++)
+                            {
+                                for (var x = 0; x < MAP_SIZE; x++)
+                                {
+                                    var info = wdt.fileInfo[x, y];
+                                    int adtFileID = (int)info.rootADT;
+
+                                    if (cascHandler.FileExists(adtFileID))
+                                    {
+                                        using (var adtstr = cascHandler.OpenFile(adtFileID))
+                                        {
+                                            adts[x, y] = new Adt(adtstr);
+                                        }
+                                    }
+                                }
+                            }
+
+                            for (int y = 0; y < MAP_SIZE; y++)
+                            {
+                                for (var x = 0; x < MAP_SIZE; x++)
+                                {
+                                    if (adts[x, y] == null)
+                                        continue;
+
+                                    byte[] castData = new byte[HEIGHT_CHUNK_RES * HEIGHT_CHUNK_RES * 3];
+                                    int idx = 0;
+                                    for (int x1 = 0; x1 < HEIGHT_CHUNK_RES; x1++)
+                                    {
+                                        for (int y1 = 0; y1 < HEIGHT_CHUNK_RES; y1++)
+                                        {
+                                            uint value = adts[x, y].areaIDmap[x1, y1];
+                                           
+                                            if (areaColorTable.TryGetValue(value, out var color))
+                                            {
+                                                castData[idx] = color.Item1;
+                                                castData[idx + 1] = color.Item2;
+                                                castData[idx + 2] = color.Item3;
+                                            }
+                                            else
+                                            {
+                                                var newColor = GetRandomColorRGB();
+                                                areaColorTable.Add(value, newColor);
+                                                castData[idx] = newColor.Item1;
+                                                castData[idx + 1] = newColor.Item2;
+                                                castData[idx + 2] = newColor.Item3;
+                                            }
+
+                                            idx += 3;
+                                        }
+                                    }
+                                    var img = Image.LoadPixelData<Rgb24>(castData, HEIGHT_CHUNK_RES, HEIGHT_CHUNK_RES);
+
+                                    if (img != null)
+                                    {
+                                        outputImage.Mutate(o => o.DrawImage(img, new Point(HEIGHT_CHUNK_RES * x, HEIGHT_CHUNK_RES * y), 1f));
+                                    }
+                                }
+                            }
+                        }
+                        outputImage.SaveAsPng($"{OUTPUTPATH}/{wdtFileID}_area_{product}_{versionName}.png");
+                    }
+                }
+            }
+        }
+
         static int GetMinimapResolution(Wdt wdt)
         {
             if (cascHandler == null) return 0;
@@ -344,6 +448,16 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
             }
 
             return 0;
+        }
+
+        static (byte, byte, byte) GetRandomColorRGB()
+        {
+            Random random = new Random();
+            byte r = (byte)random.Next(0, 255);
+            byte g = (byte)random.Next(0, 255);
+            byte b = (byte)random.Next(0, 255);
+
+            return (r, g, b);
         }
     }
 }
