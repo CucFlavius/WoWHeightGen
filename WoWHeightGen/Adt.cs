@@ -183,8 +183,8 @@ namespace WoWHeightGen
                 var nMapObjRefs = br.ReadUInt32();
                 var holesLow = br.ReadUInt16();
                 var unk = br.ReadUInt16();
-                var lowQualityTextureMap = br.ReadUInt16();
-                var noEffectDoodad = br.ReadUInt64();
+                var lowQualityTextureMap = br.ReadBytes(16); // uint2_t[8][8]
+                var noEffectDoodad = br.ReadUInt64(); // uint1_t[8][8]
                 var ofsSndEmitters = br.ReadUInt32();
                 var nSndEmitters = br.ReadUInt32();
                 var ofsLiquid = br.ReadUInt32();
