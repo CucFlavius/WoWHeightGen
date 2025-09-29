@@ -3,6 +3,7 @@ using SereniaBLPLib;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Formats.Png;
 using System.Text;
 
 namespace WoWHeightGen // Note: actual namespace depends on the project name.
@@ -199,7 +200,9 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
             if (cascHandler == null) return;
             if (cascHandler.FileExists(wdtFileID))
             {
-                using (Image<Rgba32> outputImage = new Image<Rgba32>(HEIGHT_MAP_RES, HEIGHT_MAP_RES))
+                // Using L16 for a 16bit Greyscale Map
+                // RGB uses only 8bit scaling
+                using (Image<L16> outputImage = new Image<L16>(HEIGHT_MAP_RES, HEIGHT_MAP_RES))
                 {
                     using (var wdtstr = cascHandler.OpenFile(wdtFileID))
                     {
@@ -248,36 +251,37 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
                                     if (adts[x, y] == null)
                                         continue;
 
-                                    byte[] castData = new byte[HEIGHT_CHUNK_RES * HEIGHT_CHUNK_RES * 3];
+                                    // No need for 3 dimension saving, 2 Dimensions are enough
+                                    byte[] castData = new byte[HEIGHT_CHUNK_RES * HEIGHT_CHUNK_RES * 2];
                                     int idx = 0;
                                     for (int x1 = 0; x1 < HEIGHT_CHUNK_RES; x1++)
                                     {
                                         for (int y1 = 0; y1 < HEIGHT_CHUNK_RES; y1++)
                                         {
                                             float value = adts[x, y].heightmap[x1, y1];
-                                            if (clampToAboveSea)
-                                                if (value < 0) value = 0;
-                                            if (clampToBelowSea)
-                                                if (value > 0) value = 0;
+                                            if (clampToAboveSea && value < 0) value = 0;
+                                            if (clampToBelowSea && value > 0) value = 0;
 
+                                            // Normalize to [0,1]
                                             float normalized = (value - minAdt) / (maxAdt - minAdt);
-                                            byte bValue = (byte)(normalized * 255f);
-                                            castData[idx] = bValue;
-                                            castData[idx + 1] = bValue;
-                                            castData[idx + 2] = bValue;
-                                            idx += 3;
+                                            if (normalized < 0f) normalized = 0f;
+                                            if (normalized > 1f) normalized = 1f;
+
+                                            ushort u16 = (ushort)(normalized * 65535f); // Normalize into 16bit 
+                                            // little-endian
+                                            castData[idx++] = (byte)(u16 & 0xFF); // low byte
+                                            castData[idx++] = (byte)(u16 >> 8);   // high Byte
                                         }
                                     }
-                                    var img = Image.LoadPixelData<Rgb24>(castData, HEIGHT_CHUNK_RES, HEIGHT_CHUNK_RES);
 
-                                    if (img != null)
-                                    {
-                                        outputImage.Mutate(o => o.DrawImage(img, new Point(HEIGHT_CHUNK_RES * x, HEIGHT_CHUNK_RES * y), 1f));
-                                    }
+                                    var img = Image.LoadPixelData<L16>(castData, HEIGHT_CHUNK_RES, HEIGHT_CHUNK_RES);
+                                    outputImage.Mutate(o => o.DrawImage(img, new Point(HEIGHT_CHUNK_RES * x, HEIGHT_CHUNK_RES * y), 1f));
                                 }
                             }
                         }
-                        outputImage.SaveAsPng($"{OUTPUTPATH}/{wdtFileID}_height_{product}_{versionName}.png");
+                        // Save as 16-bit, with linear data (no gamma)
+                        var png16 = new PngEncoder { ColorType = PngColorType.Grayscale, BitDepth = PngBitDepth.Bit16, Gamma = null };
+                        outputImage.SaveAsPng($"{OUTPUTPATH}/{wdtFileID}_height_{product}_{versionName}.png", png16);
                     }
                 }
             }
@@ -383,7 +387,7 @@ namespace WoWHeightGen // Note: actual namespace depends on the project name.
                                         for (int y1 = 0; y1 < HEIGHT_CHUNK_RES; y1++)
                                         {
                                             uint value = adts[x, y].areaIDmap[x1, y1];
-                                           
+
                                             if (areaColorTable.TryGetValue(value, out var color))
                                             {
                                                 castData[idx] = color.Item1;
